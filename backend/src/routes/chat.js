@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { supabaseAdmin } from "../supabaseAdmin.js";
-import { callGroq, parseRedirect } from "../groq.js";
-import { SYSTEM_PROMPT } from "../knowledge/systemPrompt.js";
+import { chatWithEngine } from "../luziaEngine.js";
 
 export const chatRouter = Router();
 
@@ -27,22 +26,16 @@ async function getOrCreateConversation(sessionId) {
 }
 
 async function saveMessage(conversationId, role, content) {
-  await supabaseAdmin.from("messages").insert({
-    conversation_id: conversationId,
-    role,
-    content,
-  });
+  await supabaseAdmin.from("messages").insert({ conversation_id: conversationId, role, content });
   await supabaseAdmin
     .from("conversations")
     .update({ updated_at: new Date().toISOString() })
     .eq("id", conversationId);
 }
 
-// POST /api/chat
-// body: { sessionId: string, messages: [{role, content}], userMessage: string }
 chatRouter.post("/", async (req, res) => {
   try {
-    const { sessionId, messages, userMessage } = req.body || {};
+    const { sessionId, messages, userMessage, userContext } = req.body || {};
     if (!sessionId || !userMessage) {
       return res.status(400).json({ error: "Falta sessionId o userMessage." });
     }
@@ -50,20 +43,32 @@ chatRouter.post("/", async (req, res) => {
     const conversationId = await getOrCreateConversation(sessionId);
     await saveMessage(conversationId, "user", userMessage);
 
-    const recentHistory = Array.isArray(messages) ? messages.slice(-10) : [];
-    const apiMessages = [
-      { role: "system", content: SYSTEM_PROMPT },
-      ...recentHistory.map((m) => ({ role: m.role, content: m.content })),
-    ];
+    const recentHistory = Array.isArray(messages)
+      ? messages.slice(-10).map((m) => ({ role: m.role, content: m.content }))
+      : [];
 
-    const raw = await callGroq(apiMessages, process.env.GROQ_TEXT_MODEL);
-    const { clean, redirect, showOptions } = parseRedirect(raw);
+    const result = await chatWithEngine({
+      message: userMessage,
+      messages: recentHistory,
+      userContext: userContext || {},
+    });
 
-    await saveMessage(conversationId, "assistant", clean);
+    await saveMessage(conversationId, "assistant", result.content);
 
-    res.json({ content: clean, redirect, showOptions });
+    res.json({
+      content: result.content,
+      redirect: result.redirect,
+      showOptions: result.showOptions,
+      engine: result.engine,
+      engineVersion: result.engineVersion,
+      knowledgeUsed: result.knowledgeUsed,
+      calculationUsed: result.calculationUsed,
+      comparisonUsed: result.comparisonUsed,
+      recommendationUsed: result.recommendationUsed,
+      sources: result.sources,
+    });
   } catch (err) {
-    console.error(err);
+    console.error("[LuzIA chat]", err);
     res.status(500).json({ error: err.message || "Error interno." });
   }
 });
