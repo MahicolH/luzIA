@@ -8,9 +8,27 @@ import { historyRouter } from "./src/routes/history.js";
 
 const app = express();
 
+const allowedOrigins = (process.env.FRONTEND_ORIGIN || "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
+
 app.use(
   cors({
-    origin: process.env.FRONTEND_ORIGIN || "*",
+    origin(origin, callback) {
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(
+        new Error("Origen no permitido por CORS.")
+      );
+    },
+    credentials: false,
   })
 );
 app.use(express.json({ limit: "2mb" }));
