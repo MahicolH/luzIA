@@ -10,8 +10,15 @@ const app = express();
 
 const allowedOrigins = (process.env.FRONTEND_ORIGIN || "")
   .split(",")
-  .map((value) => value.trim())
+  .map((value) =>
+    value
+      .trim()
+      .replace(/^['"]|['"]$/g, "")
+      .replace(/\/+$/, "")
+  )
   .filter(Boolean);
+
+console.log("CORS allowed origins:", allowedOrigins);
 
 app.use(
   cors({
@@ -20,17 +27,20 @@ app.use(
         return callback(null, true);
       }
 
-      if (allowedOrigins.includes(origin)) {
+      const normalizedOrigin = origin.replace(/\/+$/, "");
+
+      console.log("CORS request origin:", normalizedOrigin);
+
+      if (allowedOrigins.includes(normalizedOrigin)) {
         return callback(null, true);
       }
 
-      return callback(
-        new Error("Origen no permitido por CORS.")
-      );
+      return callback(new Error("Origen no permitido por CORS."));
     },
     credentials: false,
   })
 );
+
 app.use(express.json({ limit: "2mb" }));
 
 app.get("/api/health", (req, res) => res.json({ ok: true }));
@@ -41,6 +51,7 @@ app.use("/api/admin", adminRouter);
 app.use("/api/history", historyRouter);
 
 const port = process.env.PORT || 8787;
+
 app.listen(port, () => {
   console.log(`LuzIA backend escuchando en http://localhost:${port}`);
 });
